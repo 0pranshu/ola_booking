@@ -41,13 +41,196 @@ This project utilizes a PostgreSQL database with the following table structure f
 | Driver_Ratings              | VARCHAR(25)   |
 | Customer_Rating             | VARCHAR(25)   |
 
-### Sample Queries:
-1. **Identify the top 3 peak booking hours based on ride volume.**
-2. **Find the most common vehicle type booked by frequent customers.**
-3. **Determine the percentage of repeat customers in the dataset.**
-4. **Rank payment methods by their total booking value contribution.**
-5. **Calculate the average customer rating for each vehicle type in different cities.**
+## Data Base setup 
+```sql
+-- create table 
+create table ola_booking
+(
+Date Date, 
+Time Time, 
+Booking_ID varchar (20) primary key,
+Booking_Status varchar (25),
+Customer_ID varchar (25),
+Vehicle_Type varchar (25),
+Pickup_Location varchar (25),
+Drop_Location varchar (25),
+V_TAT varchar (25),
+C_TAT varchar (25),
+Canceled_Rides_by_Customer varchar (50),
+Canceled_Rides_by_Driver varchar (40),
+Incomplete_Rides varchar (25),
+Incomplete_Rides_Reason varchar (25),
+Booking_Value bigint ,
+Payment_Method varchar (25),
+Ride_Distance varchar (25),
+Driver_Ratings varchar (25),
+Customer_Rating varchar (25)
 
+);
+```
+
+
+### Solve Business Problem:
+**Customer Behavior & Ride Patterns**
+1.**Identify the top 3 peak booking hours based on ride volume.**
+```sql
+SELECT 
+    EXTRACT(HOUR FROM Time) AS booking_hour, 
+    COUNT(Booking_ID) AS total_bookings
+FROM ola_booking
+GROUP BY booking_hour
+ORDER BY total_bookings DESC
+LIMIT 3;
+```
+
+2.**Find the most common vehicle type booked by frequent customers.**
+```sql
+select count(booking_id)as total_booking ,vehicle_type from ola_booking
+group by vehicle_type 
+order by total_booking desc
+limit 1
+```
+
+3.**Determine the percentage of repeat customers in the dataset.**
+```sql
+WITH customer_booking_count AS (
+    SELECT 
+        Customer_ID, 
+        COUNT(Booking_ID) AS total_bookings
+    FROM ola_booking
+    GROUP BY Customer_ID
+)
+SELECT 
+    (COUNT(CASE WHEN total_bookings > 1 THEN Customer_ID END) * 100.0 / COUNT(*)) AS repeat_customer_percentage
+FROM customer_booking_count;
+
+```
+4.**Rank payment methods by their total booking value contribution.**
+```sql
+SELECT 
+    Payment_Method, 
+    SUM(Booking_Value) AS total_booking_value,
+    RANK() OVER (ORDER BY SUM(Booking_Value) DESC) AS ranking
+FROM ola_booking
+GROUP BY Payment_Method
+ORDER BY total_booking_value DESC;
+```
+5.**Calculate the average customer rating for each vehicle type in different cities.**
+```sql
+SELECT 
+    AVG(CAST(NULLIF(Customer_Rating, 'null') AS FLOAT)) AS customer_avg_rating, 
+    Vehicle_Type, 
+    Pickup_Location
+FROM ola_booking
+WHERE Customer_Rating IS NOT NULL
+GROUP BY Vehicle_Type, Pickup_Location
+ORDER BY Pickup_Location, customer_avg_rating DESC;
+```
+**Ride Efficiency & Service Performance**
+6.**Find the top 3 reasons for ride cancellations by customers and drivers.**
+```sql
+SELECT 
+    Incomplete_Rides_Reason, 
+    COUNT(*) AS cancellation_count
+FROM ola_booking
+WHERE Incomplete_Rides_Reason IS NOT NULL
+GROUP BY Incomplete_Rides_Reason
+ORDER BY cancellation_count DESC
+LIMIT 3;
+```
+7.**Compute the ride completion rate for each city.**
+```sql
+SELECT 
+    Pickup_Location AS City,
+    COUNT(CASE WHEN Booking_Status = 'Completed' THEN Booking_ID END) * 100.0 / COUNT(Booking_ID) AS completion_rate
+FROM ola_booking
+GROUP BY Pickup_Location
+ORDER BY completion_rate DESC;
+```
+
+8.**Identify the most in-demand vehicle type in each city during peak hours.**
+```sql
+WITH peak_hours AS (
+    SELECT EXTRACT(HOUR FROM Time) AS booking_hour
+    FROM ola_booking
+    GROUP BY EXTRACT(HOUR FROM Time)
+    ORDER BY COUNT(Booking_ID) DESC
+    LIMIT 3  -- Adjust if you want more peak hours
+)
+SELECT 
+    Pickup_Location AS City, 
+    Vehicle_Type, 
+    COUNT(Booking_ID) AS total_bookings
+FROM ola_booking
+WHERE EXTRACT(HOUR FROM Time) IN (SELECT booking_hour FROM peak_hours)
+GROUP BY Pickup_Location, Vehicle_Type
+ORDER BY City, total_bookings DESC;
+```
+9.**Determine the average ride distance for each vehicle type.**
+```sql
+SELECT 
+    Vehicle_Type, 
+    AVG(CAST(Ride_Distance AS FLOAT)) AS Avg_ride_distance_km
+FROM ola_booking 
+WHERE Ride_Distance IS NOT NULL
+GROUP BY Vehicle_Type
+ORDER BY Avg_ride_distance_km DESC;
+```
+**10.Compare the average V_TAT and C_TAT across different cities.**
+```sql
+SELECT 
+    Pickup_Location, 
+    AVG(CAST(NULLIF(V_TAT, 'null') AS FLOAT)) AS avg_V_TAT, 
+    AVG(CAST(NULLIF(C_TAT, 'null') AS FLOAT)) AS avg_C_TAT
+FROM ola_booking
+WHERE V_TAT IS NOT NULL AND C_TAT IS NOT NULL
+GROUP BY Pickup_Location
+ORDER BY Pickup_Location;
+```
+**Driver Performance & Service Quality**
+12.**Find the pickup locations with the highest ride cancellation rate.**
+```sql
+SELECT 
+    Pickup_Location, 
+    COUNT(CASE WHEN Booking_Status = 'Cancelled' THEN Booking_ID END) * 100.0 / COUNT(Booking_ID) AS cancellation_rate
+FROM ola_booking
+GROUP BY Pickup_Location
+ORDER BY cancellation_rate DESC
+LIMIT 10;
+```
+
+13.**Analyze the impact of discounts on the total number of bookings.**
+```sql
+SELECT 
+    CASE 
+        WHEN Discount_Applied > 0 THEN 'Discounted Rides' 
+        ELSE 'Non-Discounted Rides' 
+    END AS Discount_Category, 
+    COUNT(Booking_ID) AS total_bookings
+FROM ola_booking
+GROUP BY Discount_Category;
+```
+
+14.**Determine the city with the highest total revenue from bookings.**
+```sql
+select sum(booking_value) as highest_total_revenue, Pickup_Location
+from ola_booking
+group by Pickup_Location
+order by highest_total_revenue desc
+limit 1
+```
+
+15.**Identify the top 5 locations with the most canceled rides and suggest improvements.**
+```sql
+SELECT 
+    Pickup_Location, 
+    COUNT(Booking_ID) AS total_canceled_rides
+FROM ola_booking
+WHERE Booking_Status = 'Cancelled'
+GROUP BY Pickup_Location
+ORDER BY total_canceled_rides DESC
+LIMIT 5;
+```
 ## Findings
 
 Through the analysis, the following findings were uncovered:
@@ -77,13 +260,10 @@ This project provides actionable insights that can be used to improve ride-shari
 
 This analysis is essential for Ola to optimize their ride-sharing services, increase customer satisfaction, and drive overall revenue growth.
 
----
+
 
 ### Built With
 - **PostgreSQL**: Database used for querying and analysis.
 - **SQL**: Language used to write the queries and perform the data analysis.
 
-## License
-
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
 
